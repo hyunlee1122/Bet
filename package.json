@@ -1,0 +1,19 @@
+{
+  "name": "websocket-server-lp607o3i",
+  "version": "1.0.0",
+  "description": "WebSocket server for channel lp607o3i",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "keywords": ["websocket", "server", "channel", "lp607o3i"],
+  "author": "Assistant",
+  "license": "MIT"
+}
