@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Particle Universe</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a2e 50%, #16213e 100%);
+            font-family: 'Arial', sans-serif;
+            cursor: none;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #ffffff;
+            z-index: 100;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: #ffffff;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .control-group {
+            margin-bottom: 10px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+        
+        input[type="range"] {
+            width: 150px;
+        }
+        
+        button {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 2px;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+        
+        #custom-cursor {
+            position: fixed;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 9999;
+            mix-blend-mode: difference;
+            transition: transform 0.1s ease;
+        }
+        
+        .stats {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #ffffff;
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="info">
+            <h3>🌌 Interactive 3D Particle Universe</h3>
+            <p>Move your mouse to attract particles</p>
+            <p>Click and drag to create gravity wells</p>
+            <p>Press SPACE for particle explosion</p>
+            <p>Press R to reset simulation</p>
+        </div>
+        
+        <div id="controls">
+            <div class="control-group">
+                <label>Particle Count: <span id="particleCountValue">5000</span></label>
+                <input type="range" id="particleCount" min="1000" max="10000" value="5000">
+            </div>
+            <div class="control-group">
+                <label>Gravity Strength: <span id="gravityValue">0.5</span></label>
+                <input type="range" id="gravity" min="0" max="2" step="0.1" value="0.5">
+            </div>
+            <div class="control-group">
+                <label>Mouse Force: <span id="mouseForceValue">1.0</span></label>
+                <input type="range" id="mouseForce" min="0" max="3" step="0.1" value="1.0">
+            </div>
+            <div class="control-group">
+                <button id="toggleTrails">Toggle Trails</button>
+                <button id="toggleAudio">Enable Audio</button>
+                <button id="randomColors">Random Colors</button>
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div>FPS: <span id="fps">60</span></div>
+            <div>Particles: <span id="particleStats">5000</span></div>
+            <div>Mouse: <span id="mouseStats">0, 0</span></div>
+        </div>
+        
+        <div id="custom-cursor"></div>
+    </div>
+
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <script>
+        // Global variables
+        let scene, camera, renderer, particles, particleSystem;
+        let mouseX = 0, mouseY = 0;
+        let mousePressed = false;
+        let gravityWells = [];
+        let audioContext, analyser, dataArray;
+        let audioEnabled = false;
+        let trailsEnabled = true;
+        
+        // Configuration
+        const config = {
+            particleCount: 5000,
+            gravity: 0.5,
+            mouseForce: 1.0,
+            maxSpeed: 2.0,
+            trailLength: 0.98,
+            colors: [
+                new THREE.Color(0x00ffff),
+                new THREE.Color(0xff00ff),
+                new THREE.Color(0xffff00),
+                new THREE.Color(0xff0080),
+                new THREE.Color(0x80ff00)
+            ]
+        };
+        
+        // Performance monitoring
+        let frameCount = 0;
+        let lastTime = performance.now();
+        
+        class Particle {
+            constructor() {
+                this.position = new THREE.Vector3(
+                    (Math.random() - 0.5) * 2000,
+                    (Math.random() - 0.5) * 2000,
+                    (Math.random() - 0.5) * 1000
+                );
+                this.velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2,
+                    (Math.random() - 0.5) * 2
+                );
+                this.acceleration = new THREE.Vector3(0, 0, 0);
+                this.mass = Math.random() * 2 + 0.5;
+                this.life = 1.0;
+                this.maxLife = Math.random() * 5 + 5;
+                this.colorIndex = Math.floor(Math.random() * config.colors.length);
+            }
+            
+            update() {
+                // Apply forces
+                this.velocity.add(this.acceleration);
+                this.velocity.clampLength(0, config.maxSpeed);
+                this.position.add(this.velocity);
+                
+                // Apply damping
+                this.velocity.multiplyScalar(0.999);
+                this.acceleration.multiplyScalar(0);
+                
+                // Boundary conditions
+                const boundary = 1000;
+                if (Math.abs(this.position.x) > boundary) {
+                    this.velocity.x *= -0.8;
+                    this.position.x = Math.sign(this.position.x) * boundary;
+                }
+                if (Math.abs(this.position.y) > boundary) {
+                    this.velocity.y *= -0.8;
+                    this.position.y = Math.sign(this.position.y) * boundary;
+                }
+                if (Math.abs(this.position.z) > 500) {
+                    this.velocity.z *= -0.8;
+                    this.position.z = Math.sign(this.position.z) * 500;
+                }
+                
+                // Update life
+                this.life = Math.min(this.life + 0.01, this.maxLife);
+            }
+            
+            applyForce(force) {
+                const f = force.clone();
+                f.divideScalar(this.mass);
+                this.acceleration.add(f);
+            }
+        }
+        
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x0a0a0a, 1, 3000);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 3000);
+            camera.position.z = 1000;
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000, 0);
+            document.getElementById('container').appendChild(renderer.domElement);
+            
+            // Create particles
+            createParticleSystem();
+            
+            // Add event listeners
+            addEventListeners();
+            
+            // Start animation loop
+            animate();
+        }
+        
+        function createParticleSystem() {
+            particles = [];
+            
+            // Create particle geometry and material
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(config.particleCount * 3);
+            const colors = new Float32Array(config.particleCount * 3);
+            const sizes = new Float32Array(config.particleCount);
+            
+            for (let i = 0; i < config.particleCount; i++) {
+                const particle = new Particle();
+                particles.push(particle);
+                
+                const i3 = i * 3;
+                positions[i3] = particle.position.x;
+                positions[i3 + 1] = particle.position.y;
+                positions[i3 + 2] = particle.position.z;
+                
+                const color = config.colors[particle.colorIndex];
+                colors[i3] = color.r;
+                colors[i3 + 1] = color.g;
+                colors[i3 + 2] = color.b;
+                
+                sizes[i] = particle.mass * 2;
+            }
+            
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 },
+                    trailLength: { value: config.trailLength }
+                },
+                vertexShader: `
+                    attribute float size;
+                    attribute vec3 color;
+                    varying vec3 vColor;
+                    uniform float time;
+                    
+                    void main() {
+                        vColor = color;
+                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                        gl_PointSize = size * (300.0 / -mvPosition.z) * (1.0 + sin(time * 0.01) * 0.3);
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: `
+                    varying vec3 vColor;
+                    uniform float time;
+                    
+                    void main() {
+                        float distance = length(gl_PointCoord - vec2(0.5));
+                        if (distance > 0.5) discard;
+                        
+                        float alpha = 1.0 - distance * 2.0;
+                        alpha *= (0.8 + 0.2 * sin(time * 0.05));
+                        
+                        gl_FragColor = vec4(vColor, alpha);
+                    }
+                `,
+                transparent: true,
+                vertexColors: true,
+                blending: THREE.AdditiveBlending
+            });
+            
+            if (particleSystem) {
+                scene.remove(particleSystem);
+            }
+            
+            particleSystem = new THREE.Points(geometry, material);
+            scene.add(particleSystem);
+        }
+        
+        function addEventListeners() {
+            // Mouse events
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mouseup', onMouseUp);
+            
+            // Keyboard events
+            document.addEventListener('keydown', onKeyDown);
+            
+            // Window resize
+            window.addEventListener('resize', onWindowResize);
+            
+            // Controls
+            document.getElementById('particleCount').addEventListener('input', (e) => {
+                config.particleCount = parseInt(e.target.value);
+                document.getElementById('particleCountValue').textContent = config.particleCount;
+                createParticleSystem();
+            });
+            
+            document.getElementById('gravity').addEventListener('input', (e) => {
+                config.gravity = parseFloat(e.target.value);
+                document.getElementById('gravityValue').textContent = config.gravity;
+            });
+            
+            document.getElementById('mouseForce').addEventListener('input', (e) => {
+                config.mouseForce = parseFloat(e.target.value);
+                document.getElementById('mouseForceValue').textContent = config.mouseForce;
+            });
+            
+            document.getElementById('toggleTrails').addEventListener('click', () => {
+                trailsEnabled = !trailsEnabled;
+                particleSystem.material.uniforms.trailLength.value = trailsEnabled ? config.trailLength : 1.0;
+            });
+            
+            document.getElementById('toggleAudio').addEventListener('click', toggleAudio);
+            document.getElementById('randomColors').addEventListener('click', randomizeColors);
+        }
+        
+        function onMouseMove(event) {
+            mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+            mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            // Update custom cursor
+            const cursor = document.getElementById('custom-cursor');
+            cursor.style.left = event.clientX - 10 + 'px';
+            cursor.style.top = event.clientY - 10 + 'px';
+            
+            // Update mouse stats
+            document.getElementById('mouseStats').textContent = `${event.clientX}, ${event.clientY}`;
+        }
+        
+        function onMouseDown(event) {
+            mousePressed = true;
+            // Create gravity well
+            const mousePos = new THREE.Vector3(mouseX * 1000, mouseY * 1000, 0);
+            gravityWells.push({
+                position: mousePos,
+                strength: config.mouseForce * 50,
+                life: 100
+            });
+        }
+        
+        function onMouseUp(event) {
+            mousePressed = false;
+        }
+        
+        function onKeyDown(event) {
+            switch(event.code) {
+                case 'Space':
+                    event.preventDefault();
+                    explodeParticles();
+                    break;
+                case 'KeyR':
+                    resetSimulation();
+                    break;
+            }
+        }
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        function explodeParticles() {
+            particles.forEach(particle => {
+                const force = new THREE.Vector3(
+                    (Math.random() - 0.5) * 20,
+                    (Math.random() - 0.5) * 20,
+                    (Math.random() - 0.5) * 20
+                );
+                particle.applyForce(force);
+            });
+        }
+        
+        function resetSimulation() {
+            gravityWells = [];
+            createParticleSystem();
+        }
+        
+        function randomizeColors() {
+            config.colors = [];
+            for (let i = 0; i < 5; i++) {
+                config.colors.push(new THREE.Color(Math.random(), Math.random(), Math.random()));
+            }
+            createParticleSystem();
+        }
+        
+        async function toggleAudio() {
+            if (!audioEnabled) {
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const source = audioContext.createMediaStreamSource(stream);
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 256;
+                    source.connect(analyser);
+                    dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    audioEnabled = true;
+                    document.getElementById('toggleAudio').textContent = 'Disable Audio';
+                } catch (error) {
+                    console.warn('Audio not available:', error);
+                }
+            } else {
+                audioEnabled = false;
+                document.getElementById('toggleAudio').textContent = 'Enable Audio';
+            }
+        }
+        
+        function updateParticles() {
+            const positions = particleSystem.geometry.attributes.position.array;
+            const colors = particleSystem.geometry.attributes.color.array;
+            const sizes = particleSystem.geometry.attributes.size.array;
+            
+            // Mouse attraction
+            const mousePos = new THREE.Vector3(mouseX * 1000, mouseY * 1000, 0);
+            
+            // Audio visualization
+            let audioAmplitude = 0;
+            if (audioEnabled && analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                audioAmplitude = dataArray.reduce((a, b) => a + b) / dataArray.length / 255;
+            }
+            
+            particles.forEach((particle, i) => {
+                // Apply gravity
+                const gravityForce = new THREE.Vector3(0, -config.gravity, 0);
+                particle.applyForce(gravityForce);
+                
+                // Mouse interaction
+                if (mousePressed) {
+                    const mouseForce = mousePos.clone().sub(particle.position);
+                    const distance = mouseForce.length();
+                    if (distance > 0) {
+                        mouseForce.normalize();
+                        mouseForce.multiplyScalar(config.mouseForce * 1000 / (distance + 100));
+                        particle.applyForce(mouseForce);
+                    }
+                }
+                
+                // Gravity wells
+                gravityWells.forEach(well => {
+                    const wellForce = well.position.clone().sub(particle.position);
+                    const distance = wellForce.length();
+                    if (distance > 0) {
+                        wellForce.normalize();
+                        wellForce.multiplyScalar(well.strength / (distance + 50));
+                        particle.applyForce(wellForce);
+                    }
+                });
+                
+                // Audio reactive forces
+                if (audioEnabled && audioAmplitude > 0.1) {
+                    const audioForce = new THREE.Vector3(
+                        (Math.random() - 0.5) * audioAmplitude * 10,
+                        (Math.random() - 0.5) * audioAmplitude * 10,
+                        (Math.random() - 0.5) * audioAmplitude * 10
+                    );
+                    particle.applyForce(audioForce);
+                }
+                
+                particle.update();
+                
+                // Update geometry
+                const i3 = i * 3;
+                positions[i3] = particle.position.x;
+                positions[i3 + 1] = particle.position.y;
+                positions[i3 + 2] = particle.position.z;
+                
+                // Color based on velocity and audio
+                const speed = particle.velocity.length();
+                const colorIntensity = Math.min(speed / config.maxSpeed + audioAmplitude, 1);
+                const baseColor = config.colors[particle.colorIndex];
+                
+                colors[i3] = baseColor.r * colorIntensity;
+                colors[i3 + 1] = baseColor.g * colorIntensity;
+                colors[i3 + 2] = baseColor.b * colorIntensity;
+                
+                sizes[i] = particle.mass * 2 * (1 + audioAmplitude);
+            });
+            
+            // Update gravity wells
+            gravityWells = gravityWells.filter(well => {
+                well.life--;
+                well.strength *= 0.98;
+                return well.life > 0;
+            });
+            
+            // Mark geometry for update
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+            particleSystem.geometry.attributes.color.needsUpdate = true;
+            particleSystem.geometry.attributes.size.needsUpdate = true;
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update time uniform
+            particleSystem.material.uniforms.time.value = performance.now() * 0.001;
+            
+            // Update particles
+            updateParticles();
+            
+            // Camera rotation
+            const time = Date.now() * 0.0005;
+            camera.position.x = Math.cos(time) * 1000;
+            camera.position.z = Math.sin(time) * 1000;
+            camera.lookAt(scene.position);
+            
+            // Render
+            renderer.render(scene, camera);
+            
+            // Update FPS counter
+            frameCount++;
+            const currentTime = performance.now();
+            if (currentTime - lastTime >= 1000) {
+                const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                document.getElementById('fps').textContent = fps;
+                document.getElementById('particleStats').textContent = config.particleCount;
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+        }
+        
+        // Initialize the application
+        init();
+    </script>
+</body>
+</html>
